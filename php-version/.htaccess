@@ -1,15 +1,19 @@
 RewriteEngine On
 
-# Redirect short codes
+# API routes (must come first)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^api\.php/(.*)$ api.php [L,QSA,E=PATH_INFO:/$1]
+
+# Redirect short codes (8 character alphanumeric)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_URI} ^/([a-zA-Z0-9]{8})$
 RewriteRule ^([a-zA-Z0-9]{8})$ redirect.php?code=$1 [L,QSA]
 
-# API routes
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^api\.php/(.*)$ api.php [L,QSA,E=PATH_INFO:/$1]
+# QR Manager routes (if accessing /qr-manager or /qr)
+RewriteCond %{REQUEST_URI} ^/(qr-manager|qr)/?$
+RewriteRule ^(qr-manager|qr)/?$ index.php [L]
 
-# Default to index.php
-DirectoryIndex index.php
+# Default index files
+DirectoryIndex index.html index.php
 

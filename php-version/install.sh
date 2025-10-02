@@ -17,7 +17,7 @@ echo -e "${BLUE}╚════════════════════�
 echo ""
 
 # Configuration
-INSTALL_PATH="/home/piumie.com/html/qr"
+INSTALL_PATH="/home/piumie.com/html"
 REPO_URL="https://github.com/hoai2806/qr-manager-piumie.git"
 
 echo -e "${YELLOW}[1/6] Checking PHP...${NC}"
@@ -60,21 +60,30 @@ echo -e "${GREEN}✅ Database configured${NC}"
 
 echo ""
 echo -e "${YELLOW}[5/6] Installing application...${NC}"
-mkdir -p $INSTALL_PATH
-cd $INSTALL_PATH
 
-if [ -d ".git" ]; then
-    git pull origin main
-else
-    git clone $REPO_URL .
+# Backup existing files if any
+if [ -d "$INSTALL_PATH/qr-manager-backup" ]; then
+    rm -rf $INSTALL_PATH/qr-manager-backup
 fi
 
-cd php-version
+# Clone to temp directory
+TEMP_DIR="/tmp/qr-manager-temp"
+rm -rf $TEMP_DIR
+git clone $REPO_URL $TEMP_DIR
+
+# Copy PHP version files to html directory
+cp -r $TEMP_DIR/php-version/* $INSTALL_PATH/
+
+# Install composer dependencies
+cd $INSTALL_PATH
 composer install --no-dev --optimize-autoloader
 
 # Create directories
 mkdir -p uploads/logos uploads/qrcodes
 chmod 755 uploads uploads/logos uploads/qrcodes
+
+# Cleanup
+rm -rf $TEMP_DIR
 
 echo -e "${GREEN}✅ Application installed${NC}"
 
@@ -90,19 +99,23 @@ echo -e "${BLUE}║         Installation Complete!         ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
 echo ""
 
-echo -e "${GREEN}📍 Installation Path:${NC} $INSTALL_PATH/php-version"
-echo -e "${GREEN}🌐 Access URL:${NC} https://piumie.com/qr"
+echo -e "${GREEN}📍 Installation Path:${NC} $INSTALL_PATH"
+echo -e "${GREEN}🌐 Access URL:${NC} https://piumie.com"
 echo -e "${GREEN}🔑 Passcode:${NC} Piumie2024"
 echo ""
 
-echo -e "${YELLOW}📝 Next steps:${NC}"
-echo -e "1. Vào OpenLiteSpeed Admin Panel"
-echo -e "2. Virtual Hosts → piumie.com → Context → Add"
-echo -e "3. Type: Static"
-echo -e "4. URI: /qr"
-echo -e "5. Location: $INSTALL_PATH/php-version/"
-echo -e "6. Accessible: Yes"
-echo -e "7. Graceful Restart"
+echo -e "${YELLOW}📝 Files installed:${NC}"
+echo -e "  • index.php (main entry)"
+echo -e "  • api.php (API endpoints)"
+echo -e "  • config.php (configuration)"
+echo -e "  • login.html, dashboard.html"
+echo -e "  • .htaccess (URL rewriting)"
+echo ""
+
+echo -e "${YELLOW}🔧 OpenLiteSpeed should auto-detect PHP files${NC}"
+echo -e "If not, check Virtual Host configuration:"
+echo -e "  • Document Root: $INSTALL_PATH"
+echo -e "  • Index Files: index.php, index.html"
 echo ""
 
 echo -e "${GREEN}🎉 Done!${NC}"

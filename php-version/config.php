@@ -10,7 +10,7 @@ define('DB_PASS', 'Piumie2024QR');
 define('ADMIN_PASSCODE', 'Piumie2024');
 
 // Base URL
-define('BASE_URL', 'https://qr.piumie.com');
+define('BASE_URL', 'https://piumie.com');
 
 // Upload Directory
 define('UPLOAD_DIR', __DIR__ . '/uploads/logos/');
