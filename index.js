@@ -10,9 +10,8 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Admin credentials (from environment variables)
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+// Admin passcode (from environment variables)
+const ADMIN_PASSCODE = process.env.ADMIN_PASSCODE || 'Piumie2024';
 
 // Middleware
 app.use(cors());
@@ -76,14 +75,14 @@ app.get('/', (req, res) => {
 
 // Login API
 app.post('/api/login', (req, res) => {
-    const { username, password } = req.body;
+    const { passcode } = req.body;
 
-    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    if (passcode === ADMIN_PASSCODE) {
         req.session.isAuthenticated = true;
-        req.session.username = username;
+        req.session.username = 'Admin';
         res.json({ success: true, message: 'Login successful' });
     } else {
-        res.status(401).json({ success: false, message: 'Invalid credentials' });
+        res.status(401).json({ success: false, message: 'Mã passcode không đúng' });
     }
 });
 
