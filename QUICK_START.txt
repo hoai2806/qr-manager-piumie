@@ -1,0 +1,156 @@
+========================================
+QR CODE MANAGER - VERCEL EDITION
+Hướng dẫn Deploy Cực Nhanh
+========================================
+
+🎯 MỤC TIÊU:
+Deploy QR Code Manager lên Vercel với domain qr.piumie.com
+
+⏱️ THỜI GIAN: 10 phút
+
+💰 CHI PHÍ: $0 (Miễn phí 100%)
+
+========================================
+BƯỚC 1: MONGODB (3 phút)
+========================================
+
+1. Truy cập: https://www.mongodb.com/cloud/atlas
+2. Đăng ký tài khoản (miễn phí)
+3. Tạo cluster FREE (M0)
+4. Tạo user:
+   - Username: qrmanager
+   - Password: (tự động generate, LƯU LẠI!)
+5. Whitelist IP: 0.0.0.0/0
+6. Lấy connection string:
+   mongodb+srv://qrmanager:PASSWORD@cluster.mongodb.net/qrmanager
+   
+   ⚠️ LƯU LẠI CONNECTION STRING!
+
+========================================
+BƯỚC 2: GITHUB (2 phút)
+========================================
+
+1. Tạo repo mới: https://github.com/new
+   - Tên: qr-manager-piumie
+   - Public
+
+2. Push code:
+   cd qr-manager-vercel
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git branch -M main
+   git remote add origin https://github.com/YOUR_USERNAME/qr-manager-piumie.git
+   git push -u origin main
+
+========================================
+BƯỚC 3: VERCEL (3 phút)
+========================================
+
+1. Truy cập: https://vercel.com/signup
+2. Đăng nhập bằng GitHub
+3. Import project: qr-manager-piumie
+4. Add Environment Variables:
+   
+   MONGODB_URI = (paste connection string từ bước 1)
+   BASE_URL = https://qr-manager-piumie.vercel.app
+   
+5. Click "Deploy"
+6. Đợi 1-2 phút → Xong!
+
+========================================
+BƯỚC 4: DOMAIN (2 phút)
+========================================
+
+1. Trong Vercel project:
+   Settings → Domains → Add: qr.piumie.com
+
+2. Vercel cho DNS record:
+   Type: CNAME
+   Name: qr
+   Value: cname.vercel-dns.com
+
+3. Vào quản lý DNS của piumie.com:
+   - Thêm CNAME record như trên
+   
+4. Cập nhật BASE_URL trong Vercel:
+   Settings → Environment Variables
+   BASE_URL = https://qr.piumie.com
+   
+5. Redeploy
+
+6. Đợi 5-10 phút → Xong!
+
+========================================
+✅ HOÀN TẤT!
+========================================
+
+Truy cập: https://qr.piumie.com
+
+Tính năng:
+✅ Tạo QR code
+✅ Shortlink tự động
+✅ Theo dõi scan & click
+✅ SSL miễn phí
+✅ Database miễn phí
+✅ Hosting miễn phí
+
+========================================
+🧪 TEST
+========================================
+
+1. Vào https://qr.piumie.com
+2. Click "Tạo QR Code Mới"
+3. Nhập:
+   - Tiêu đề: Test
+   - URL: https://google.com
+4. Tạo QR code
+5. Test short URL
+6. Xem số lượt click tăng
+
+========================================
+📁 FILES QUAN TRỌNG
+========================================
+
+index.js          - Server Node.js
+public/index.html - Frontend
+vercel.json       - Vercel config
+package.json      - Dependencies
+README.md         - Tài liệu đầy đủ
+DEPLOY_GUIDE.md   - Hướng dẫn chi tiết
+
+========================================
+🆘 NẾU GẶP LỖI
+========================================
+
+1. MongoDB connection failed:
+   → Kiểm tra connection string
+   → Kiểm tra IP whitelist
+
+2. Domain not working:
+   → Đợi 10-20 phút
+   → Kiểm tra CNAME record
+
+3. Build failed:
+   → Xem Vercel logs
+   → Kiểm tra Environment Variables
+
+========================================
+📞 HỖ TRỢ
+========================================
+
+- Xem logs: Vercel → Deployments → Logs
+- Test API: https://qr.piumie.com/api/health
+- Đọc README.md để biết thêm chi tiết
+
+========================================
+🎉 CHÚC MỪNG!
+========================================
+
+Bạn đã có hệ thống QR Code Manager chuyên nghiệp:
+- Miễn phí 100%
+- SSL tự động
+- Deploy tự động khi push code
+- Scalable & Fast
+
+Enjoy! 🚀
