@@ -23,20 +23,53 @@
         }
         
         .header {
-            background: white;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             padding: 30px;
             border-radius: 12px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
         }
-        
-        .header h1 {
-            color: #2c3e50;
+
+        .header-content h1 {
+            color: white;
             margin-bottom: 10px;
         }
-        
-        .header p {
-            color: #7f8c8d;
+
+        .header-content p {
+            color: rgba(255,255,255,0.9);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .user-info {
+            color: white;
+            margin-right: 15px;
+            font-weight: 500;
+        }
+
+        .btn-logout {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-logout:hover {
+            background: white;
+            color: #667eea;
         }
         
         .stats {
@@ -269,11 +302,19 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎯 QR Code Manager</h1>
-            <p>Quản lý QR Code và Shortlink - piumie.com</p>
-            <button class="btn btn-primary" onclick="openModal()" style="margin-top: 15px;">
-                ➕ Tạo QR Code Mới
-            </button>
+            <div class="header-content">
+                <h1>🎯 QR Code Manager</h1>
+                <p>Quản lý QR Code và Shortlink - piumie.com</p>
+            </div>
+            <div class="header-actions">
+                <span class="user-info" id="userInfo">👤 Admin</span>
+                <button class="btn btn-primary" onclick="openModal()">
+                    ➕ Tạo QR Code
+                </button>
+                <button class="btn-logout" onclick="logout()">
+                    🚪 Đăng xuất
+                </button>
+            </div>
         </div>
         
         <div class="stats">
@@ -327,11 +368,45 @@
     <script>
         const API_URL = window.location.origin;
 
-        // Load data on page load
-        window.addEventListener('DOMContentLoaded', () => {
+        // Check authentication on page load
+        window.addEventListener('DOMContentLoaded', async () => {
+            await checkAuth();
             loadStats();
             loadQRCodes();
         });
+
+        // Check if user is authenticated
+        async function checkAuth() {
+            try {
+                const response = await fetch(`${API_URL}/api/auth/status`);
+                const data = await response.json();
+
+                if (!data.isAuthenticated) {
+                    window.location.href = '/';
+                    return;
+                }
+
+                if (data.username) {
+                    document.getElementById('userInfo').textContent = `👤 ${data.username}`;
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                window.location.href = '/';
+            }
+        }
+
+        // Logout function
+        async function logout() {
+            if (confirm('Bạn có chắc muốn đăng xuất?')) {
+                try {
+                    await fetch(`${API_URL}/api/logout`, { method: 'POST' });
+                    window.location.href = '/';
+                } catch (error) {
+                    console.error('Logout failed:', error);
+                    window.location.href = '/';
+                }
+            }
+        }
 
         function openModal() {
             document.getElementById('modal').classList.add('show');

@@ -4,15 +4,29 @@ const QRCode = require('qrcode');
 const { nanoid } = require('nanoid');
 const cors = require('cors');
 const path = require('path');
+const session = require('express-session');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Admin credentials (from environment variables)
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'qr-manager-secret-key-2024',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+}));
 app.use(express.static('public'));
 
 // MongoDB Connection
@@ -41,15 +55,54 @@ const qrCodeSchema = new mongoose.Schema({
 
 const QRCodeModel = mongoose.model('QRCode', qrCodeSchema);
 
+// Authentication Middleware
+const requireAuth = (req, res, next) => {
+    if (req.session && req.session.isAuthenticated) {
+        return next();
+    }
+    res.status(401).json({ success: false, message: 'Authentication required' });
+};
+
 // Routes
 
-// Home page - Serve HTML
+// Login page
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    if (req.session && req.session.isAuthenticated) {
+        res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+    } else {
+        res.sendFile(path.join(__dirname, 'public', 'login.html'));
+    }
 });
 
-// API: Get all QR codes
-app.get('/api/qrcodes', async (req, res) => {
+// Login API
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+
+    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+        req.session.isAuthenticated = true;
+        req.session.username = username;
+        res.json({ success: true, message: 'Login successful' });
+    } else {
+        res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+});
+
+// Logout API
+app.post('/api/logout', (req, res) => {
+    req.session.destroy();
+    res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// Check auth status
+app.get('/api/auth/status', (req, res) => {
+    res.json({
+        isAuthenticated: req.session && req.session.isAuthenticated,
+        username: req.session?.username
+    });
+});
+
+// API: Get all QR codes (protected)
+app.get('/api/qrcodes', requireAuth, async (req, res) => {
     try {
         const qrcodes = await QRCodeModel.find().sort({ createdAt: -1 });
         res.json({ success: true, data: qrcodes });
@@ -58,8 +111,8 @@ app.get('/api/qrcodes', async (req, res) => {
     }
 });
 
-// API: Create QR code
-app.post('/api/qrcodes', async (req, res) => {
+// API: Create QR code (protected)
+app.post('/api/qrcodes', requireAuth, async (req, res) => {
     try {
         const { title, url } = req.body;
 
@@ -118,8 +171,8 @@ app.post('/api/qrcodes', async (req, res) => {
     }
 });
 
-// API: Delete QR code
-app.delete('/api/qrcodes/:id', async (req, res) => {
+// API: Delete QR code (protected)
+app.delete('/api/qrcodes/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const deleted = await QRCodeModel.findByIdAndDelete(id);
@@ -144,8 +197,8 @@ app.delete('/api/qrcodes/:id', async (req, res) => {
     }
 });
 
-// API: Get statistics
-app.get('/api/stats', async (req, res) => {
+// API: Get statistics (protected)
+app.get('/api/stats', requireAuth, async (req, res) => {
     try {
         const totalQR = await QRCodeModel.countDocuments();
         const qrcodes = await QRCodeModel.find();
