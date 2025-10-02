@@ -182,17 +182,45 @@ echo -e "${BLUE}║      Next: Configure OpenLiteSpeed    ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
 echo ""
 
-echo -e "${YELLOW}Cấu hình Nginx Reverse Proxy:${NC}"
+echo -e "${YELLOW}Cài đặt Nginx (song song với OpenLiteSpeed):${NC}"
 echo ""
-echo -e "  1. Tạo file config:"
-echo -e "     ${YELLOW}nano /etc/nginx/sites-available/qr.piumie.com${NC}"
-echo ""
-echo -e "  2. Thêm nội dung:"
-echo -e "${GREEN}"
-cat << 'NGINXCONF'
+
+# Check if Nginx is installed
+if ! command -v nginx &> /dev/null; then
+    echo -e "${YELLOW}📦 Installing Nginx...${NC}"
+    apt-get update
+    apt-get install -y nginx
+    echo -e "${GREEN}✅ Nginx installed${NC}"
+else
+    echo -e "${GREEN}✅ Nginx already installed${NC}"
+fi
+
+# Stop Nginx first (to avoid port conflict)
+systemctl stop nginx 2>/dev/null || true
+
+# Configure Nginx to use port 8080 (avoid conflict with OpenLiteSpeed on port 80)
+echo -e "${YELLOW}📝 Configuring Nginx on port 8080...${NC}"
+
+# Update default Nginx config to use port 8080
+cat > /etc/nginx/sites-available/default << 'EOF'
 server {
-    listen 80;
-    server_name qr.piumie.com;
+    listen 8080 default_server;
+    listen [::]:8080 default_server;
+
+    server_name _;
+
+    location / {
+        return 404;
+    }
+}
+EOF
+
+# Create QR Manager config
+cat > /etc/nginx/sites-available/qr-manager << 'EOF'
+server {
+    listen 8080;
+    listen [::]:8080;
+    server_name qr.piumie.com 15.235.192.138;
 
     location / {
         proxy_pass http://127.0.0.1:5000;
@@ -206,17 +234,27 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
-NGINXCONF
-echo -e "${NC}"
+EOF
+
+# Enable site
+ln -sf /etc/nginx/sites-available/qr-manager /etc/nginx/sites-enabled/
+
+# Test Nginx config
+if nginx -t 2>/dev/null; then
+    echo -e "${GREEN}✅ Nginx config valid${NC}"
+    systemctl start nginx
+    systemctl enable nginx
+    echo -e "${GREEN}✅ Nginx started on port 8080${NC}"
+else
+    echo -e "${RED}❌ Nginx config error${NC}"
+fi
+
 echo ""
-echo -e "  3. Enable site:"
-echo -e "     ${YELLOW}ln -s /etc/nginx/sites-available/qr.piumie.com /etc/nginx/sites-enabled/${NC}"
+echo -e "${GREEN}🌐 Access URLs:${NC}"
+echo -e "  • Via Nginx: ${YELLOW}http://15.235.192.138:8080${NC}"
+echo -e "  • Direct: ${YELLOW}http://15.235.192.138:5000${NC}"
 echo ""
-echo -e "  4. Test và reload:"
-echo -e "     ${YELLOW}nginx -t && systemctl reload nginx${NC}"
-echo ""
-echo -e "  5. Setup SSL (optional):"
-echo -e "     ${YELLOW}certbot --nginx -d qr.piumie.com${NC}"
+echo -e "${BLUE}Note: Nginx chạy trên port 8080 (không conflict với OpenLiteSpeed port 80)${NC}"
 echo ""
 
 echo -e "${GREEN}📖 Full guide: ${YELLOW}cat openlitespeed-config.md${NC}"
