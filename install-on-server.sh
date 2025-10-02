@@ -19,9 +19,9 @@ echo -e "${BLUE}╚════════════════════�
 echo ""
 
 # Configuration
-SERVER_PATH="/home/piumie.com/html/qr-manager"
+SERVER_PATH="/root/qr-manager"
 REPO_URL="https://github.com/hoai2806/qr-manager-piumie.git"
-APP_PORT=3000
+APP_PORT=5000
 
 # Step 1: Check Node.js
 echo -e "${YELLOW}[1/8] Checking Node.js...${NC}"
@@ -83,25 +83,60 @@ echo -e "${YELLOW}[6/8] Creating logs directory...${NC}"
 mkdir -p logs
 echo -e "${GREEN}✅ Logs directory created${NC}"
 
-# Step 7: Create .env file
+# Step 7: Install and configure PostgreSQL
 echo ""
-echo -e "${YELLOW}[7/8] Configuring environment...${NC}"
-if [ ! -f ".env" ]; then
-    cat > .env << 'EOF'
-MONGODB_URI=mongodb+srv://cvhoai_db_user:Ry5Z62YUprIYexWp@qrcodesdc.emvwzan.mongodb.net/qrmanager?retryWrites=true&w=majority&appName=qrcodesdc
-ADMIN_PASSCODE=Piumie2024
-BASE_URL=https://qr.piumie.com
-PORT=3000
-NODE_ENV=production
-EOF
-    echo -e "${GREEN}✅ .env file created${NC}"
+echo -e "${YELLOW}[7/10] Installing PostgreSQL...${NC}"
+if ! command -v psql &> /dev/null; then
+    echo -e "${YELLOW}📦 Installing PostgreSQL...${NC}"
+    apt-get update
+    apt-get install -y postgresql postgresql-contrib
+    systemctl start postgresql
+    systemctl enable postgresql
+    echo -e "${GREEN}✅ PostgreSQL installed${NC}"
 else
-    echo -e "${GREEN}✅ .env file already exists${NC}"
+    echo -e "${GREEN}✅ PostgreSQL already installed${NC}"
 fi
 
-# Step 8: Start with PM2
+# Step 8: Create database and user
 echo ""
-echo -e "${YELLOW}[8/8] Starting application...${NC}"
+echo -e "${YELLOW}[8/10] Configuring PostgreSQL database...${NC}"
+sudo -u postgres psql << 'EOSQL'
+-- Create database
+CREATE DATABASE qrmanager;
+
+-- Create user
+CREATE USER qrmanager_user WITH ENCRYPTED PASSWORD 'Piumie2024QR';
+
+-- Grant privileges
+GRANT ALL PRIVILEGES ON DATABASE qrmanager TO qrmanager_user;
+
+-- Connect to database and grant schema privileges
+\c qrmanager
+GRANT ALL ON SCHEMA public TO qrmanager_user;
+EOSQL
+
+echo -e "${GREEN}✅ PostgreSQL database configured${NC}"
+
+# Step 9: Create .env file
+echo ""
+echo -e "${YELLOW}[9/10] Configuring environment...${NC}"
+cat > .env << 'EOF'
+# Database
+DATABASE_URL=postgresql://qrmanager_user:Piumie2024QR@localhost:5432/qrmanager
+
+# Admin
+ADMIN_PASSCODE=Piumie2024
+
+# Server
+BASE_URL=https://qr.piumie.com
+PORT=5000
+NODE_ENV=production
+EOF
+echo -e "${GREEN}✅ .env file created${NC}"
+
+# Step 10: Start with PM2
+echo ""
+echo -e "${YELLOW}[10/10] Starting application...${NC}"
 
 # Stop existing process
 pm2 stop qr-manager 2>/dev/null || true
@@ -147,30 +182,41 @@ echo -e "${BLUE}║      Next: Configure OpenLiteSpeed    ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
 echo ""
 
-echo -e "${YELLOW}Option 1: Subdomain (Recommended)${NC}"
-echo -e "  URL: ${GREEN}https://qr.piumie.com${NC}"
+echo -e "${YELLOW}Cấu hình Nginx Reverse Proxy:${NC}"
 echo ""
-echo -e "  1. Login to OpenLiteSpeed Admin Panel"
-echo -e "  2. Create Virtual Host: ${YELLOW}qr.piumie.com${NC}"
-echo -e "  3. Add External App:"
-echo -e "     - Name: ${YELLOW}qr-manager-node${NC}"
-echo -e "     - Address: ${YELLOW}http://127.0.0.1:3000${NC}"
-echo -e "  4. Add Context (Proxy):"
-echo -e "     - URI: ${YELLOW}/${NC}"
-echo -e "     - External App: ${YELLOW}qr-manager-node${NC}"
-echo -e "  5. Graceful Restart"
+echo -e "  1. Tạo file config:"
+echo -e "     ${YELLOW}nano /etc/nginx/sites-available/qr.piumie.com${NC}"
 echo ""
+echo -e "  2. Thêm nội dung:"
+echo -e "${GREEN}"
+cat << 'NGINXCONF'
+server {
+    listen 80;
+    server_name qr.piumie.com;
 
-echo -e "${YELLOW}Option 2: Path on main domain${NC}"
-echo -e "  URL: ${GREEN}https://piumie.com/qr${NC}"
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+NGINXCONF
+echo -e "${NC}"
 echo ""
-echo -e "  1. Login to OpenLiteSpeed Admin Panel"
-echo -e "  2. Go to Virtual Host: ${YELLOW}piumie.com${NC}"
-echo -e "  3. Add External App (same as above)"
-echo -e "  4. Add Context (Proxy):"
-echo -e "     - URI: ${YELLOW}/qr${NC}"
-echo -e "     - External App: ${YELLOW}qr-manager-node${NC}"
-echo -e "  5. Graceful Restart"
+echo -e "  3. Enable site:"
+echo -e "     ${YELLOW}ln -s /etc/nginx/sites-available/qr.piumie.com /etc/nginx/sites-enabled/${NC}"
+echo ""
+echo -e "  4. Test và reload:"
+echo -e "     ${YELLOW}nginx -t && systemctl reload nginx${NC}"
+echo ""
+echo -e "  5. Setup SSL (optional):"
+echo -e "     ${YELLOW}certbot --nginx -d qr.piumie.com${NC}"
 echo ""
 
 echo -e "${GREEN}📖 Full guide: ${YELLOW}cat openlitespeed-config.md${NC}"

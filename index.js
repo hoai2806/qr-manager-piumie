@@ -1,5 +1,5 @@
 const express = require('express');
-const mongoose = require('mongoose');
+const { Pool } = require('pg');
 const QRCode = require('qrcode');
 const { nanoid } = require('nanoid');
 const cors = require('cors');
@@ -8,11 +8,56 @@ const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
-// Admin passcode (from environment variables)
+// Admin passcode
 const ADMIN_PASSCODE = process.env.ADMIN_PASSCODE || 'Piumie2024';
 const AUTH_TOKEN = 'qr_manager_authenticated';
+
+// PostgreSQL connection
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
+// Test database connection
+pool.query('SELECT NOW()', (err, res) => {
+    if (err) {
+        console.error('❌ PostgreSQL connection error:', err.message);
+    } else {
+        console.log('✅ Connected to PostgreSQL');
+    }
+});
+
+// Create tables if not exists
+const initDatabase = async () => {
+    const createTableQuery = `
+        CREATE TABLE IF NOT EXISTS qrcodes (
+            id SERIAL PRIMARY KEY,
+            short_code VARCHAR(20) UNIQUE NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            original_url TEXT NOT NULL,
+            qr_image TEXT NOT NULL,
+            scan_count INTEGER DEFAULT 0,
+            click_count INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_short_code ON qrcodes(short_code);
+        CREATE INDEX IF NOT EXISTS idx_created_at ON qrcodes(created_at DESC);
+    `;
+    
+    try {
+        await pool.query(createTableQuery);
+        console.log('✅ Database tables initialized');
+    } catch (error) {
+        console.error('❌ Error initializing database:', error.message);
+    }
+};
+
+initDatabase();
 
 // Middleware
 app.use(cors({
@@ -24,45 +69,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(express.static('public'));
 
-// MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/qrmanager';
-
-// Connect to MongoDB with better error handling
-mongoose.connect(MONGODB_URI, {
-    serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 45000,
-})
-.then(() => {
-    console.log('✅ Connected to MongoDB');
-})
-.catch(err => {
-    console.error('❌ MongoDB connection error:', err.message);
-});
-
-// Middleware to check MongoDB connection
-const checkDBConnection = (req, res, next) => {
-    if (mongoose.connection.readyState !== 1) {
-        return res.status(503).json({
-            success: false,
-            message: 'Database connection not ready. Please check MONGODB_URI environment variable.'
-        });
-    }
-    next();
-};
-
-// QR Code Schema
-const qrCodeSchema = new mongoose.Schema({
-    title: { type: String, required: true },
-    url: { type: String, required: true },
-    shortlink: { type: String, required: true, unique: true },
-    qrCodeData: { type: String, required: true }, // Base64 QR code image
-    scanCount: { type: Number, default: 0 },
-    clickCount: { type: Number, default: 0 },
-    createdAt: { type: Date, default: Date.now }
-});
-
-const QRCodeModel = mongoose.model('QRCode', qrCodeSchema);
-
 // Authentication Middleware
 const requireAuth = (req, res, next) => {
     const authCookie = req.cookies.auth_token;
@@ -72,7 +78,18 @@ const requireAuth = (req, res, next) => {
     res.status(401).json({ success: false, message: 'Authentication required' });
 };
 
-// Routes
+// Middleware to check DB connection
+const checkDBConnection = async (req, res, next) => {
+    try {
+        await pool.query('SELECT 1');
+        next();
+    } catch (error) {
+        res.status(503).json({ 
+            success: false, 
+            message: 'Database connection not ready' 
+        });
+    }
+};
 
 // Login page
 app.get('/', (req, res) => {
@@ -87,12 +104,11 @@ app.get('/', (req, res) => {
 // Login API
 app.post('/api/login', (req, res) => {
     const { passcode } = req.body;
-
+    
     if (passcode === ADMIN_PASSCODE) {
-        // Set cookie for authentication
         res.cookie('auth_token', AUTH_TOKEN, {
             httpOnly: true,
-            maxAge: 24 * 60 * 60 * 1000, // 24 hours
+            maxAge: 24 * 60 * 60 * 1000,
             sameSite: 'lax'
         });
         res.json({ success: true, message: 'Login successful' });
@@ -111,24 +127,26 @@ app.post('/api/logout', (req, res) => {
 app.get('/api/auth/status', (req, res) => {
     const authCookie = req.cookies.auth_token;
     const isAuthenticated = authCookie === AUTH_TOKEN;
-    res.json({
+    res.json({ 
         isAuthenticated: isAuthenticated,
         username: isAuthenticated ? 'Admin' : null
     });
 });
 
-// API: Get all QR codes (protected)
+// API: Get all QR codes
 app.get('/api/qrcodes', requireAuth, checkDBConnection, async (req, res) => {
     try {
-        const qrcodes = await QRCodeModel.find().sort({ createdAt: -1 });
-        res.json({ success: true, data: qrcodes });
+        const result = await pool.query(
+            'SELECT * FROM qrcodes ORDER BY created_at DESC'
+        );
+        res.json({ success: true, data: result.rows });
     } catch (error) {
         console.error('Error fetching QR codes:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-// API: Create QR code (protected)
+// API: Create QR code
 app.post('/api/qrcodes', requireAuth, checkDBConnection, async (req, res) => {
     try {
         const { title, url } = req.body;
@@ -136,7 +154,7 @@ app.post('/api/qrcodes', requireAuth, checkDBConnection, async (req, res) => {
         if (!title || !url) {
             return res.status(400).json({ 
                 success: false, 
-                message: 'Vui lòng điền đầy đủ thông tin' 
+                message: 'Title and URL are required' 
             });
         }
 
@@ -146,67 +164,42 @@ app.post('/api/qrcodes', requireAuth, checkDBConnection, async (req, res) => {
         } catch (e) {
             return res.status(400).json({ 
                 success: false, 
-                message: 'URL không hợp lệ' 
+                message: 'Invalid URL format' 
             });
         }
 
-        // Generate unique shortlink
-        const shortlink = nanoid(6);
-        const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
-        const shortUrl = `${baseUrl}/go/${shortlink}`;
+        // Generate short code
+        const shortCode = nanoid(8);
+        const shortUrl = `${process.env.BASE_URL || 'http://localhost:' + PORT}/${shortCode}`;
 
-        // Generate QR code as base64
-        const qrCodeData = await QRCode.toDataURL(shortUrl, {
+        // Generate QR code
+        const qrImage = await QRCode.toDataURL(shortUrl, {
             errorCorrectionLevel: 'H',
             type: 'image/png',
-            width: 300,
-            margin: 2
+            quality: 0.95,
+            margin: 1,
+            width: 512,
+            color: {
+                dark: '#000000',
+                light: '#FFFFFF'
+            }
         });
 
         // Save to database
-        const newQR = new QRCodeModel({
-            title,
-            url,
-            shortlink,
-            qrCodeData
-        });
-
-        await newQR.save();
+        const result = await pool.query(
+            `INSERT INTO qrcodes (short_code, title, original_url, qr_image) 
+             VALUES ($1, $2, $3, $4) 
+             RETURNING *`,
+            [shortCode, title, url, qrImage]
+        );
 
         res.json({ 
             success: true, 
-            message: 'Tạo QR code thành công!',
-            data: newQR 
+            message: 'QR Code created successfully',
+            data: result.rows[0]
         });
-
     } catch (error) {
         console.error('Error creating QR code:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Lỗi: ' + error.message 
-        });
-    }
-});
-
-// API: Delete QR code (protected)
-app.delete('/api/qrcodes/:id', requireAuth, checkDBConnection, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const deleted = await QRCodeModel.findByIdAndDelete(id);
-
-        if (!deleted) {
-            return res.status(404).json({ 
-                success: false, 
-                message: 'Không tìm thấy QR code' 
-            });
-        }
-
-        res.json({ 
-            success: true, 
-            message: 'Đã xóa thành công' 
-        });
-
-    } catch (error) {
         res.status(500).json({ 
             success: false, 
             message: error.message 
@@ -214,101 +207,149 @@ app.delete('/api/qrcodes/:id', requireAuth, checkDBConnection, async (req, res) 
     }
 });
 
-// API: Get statistics (protected)
+// API: Update QR code
+app.put('/api/qrcodes/:id', requireAuth, checkDBConnection, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, url, isActive } = req.body;
+
+        const result = await pool.query(
+            `UPDATE qrcodes 
+             SET title = COALESCE($1, title),
+                 original_url = COALESCE($2, original_url),
+                 is_active = COALESCE($3, is_active),
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $4
+             RETURNING *`,
+            [title, url, isActive, id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'QR Code not found' 
+            });
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'QR Code updated successfully',
+            data: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Error updating QR code:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// API: Delete QR code
+app.delete('/api/qrcodes/:id', requireAuth, checkDBConnection, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const result = await pool.query(
+            'DELETE FROM qrcodes WHERE id = $1 RETURNING *',
+            [id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'QR Code not found' 
+            });
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'QR Code deleted successfully' 
+        });
+    } catch (error) {
+        console.error('Error deleting QR code:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// API: Get statistics
 app.get('/api/stats', requireAuth, checkDBConnection, async (req, res) => {
     try {
-        const totalQR = await QRCodeModel.countDocuments();
-        const qrcodes = await QRCodeModel.find();
-        
-        const totalScans = qrcodes.reduce((sum, qr) => sum + qr.scanCount, 0);
-        const totalClicks = qrcodes.reduce((sum, qr) => sum + qr.clickCount, 0);
+        const totalResult = await pool.query('SELECT COUNT(*) as count FROM qrcodes');
+        const scansResult = await pool.query('SELECT SUM(scan_count) as total FROM qrcodes');
+        const clicksResult = await pool.query('SELECT SUM(click_count) as total FROM qrcodes');
 
         res.json({
             success: true,
             data: {
-                totalQR,
-                totalScans,
-                totalClicks
+                totalQR: parseInt(totalResult.rows[0].count),
+                totalScans: parseInt(scansResult.rows[0].total) || 0,
+                totalClicks: parseInt(clicksResult.rows[0].total) || 0
             }
         });
     } catch (error) {
         console.error('Error fetching stats:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
         });
     }
 });
 
-// Redirect handler - Short URL
-app.get('/go/:shortlink', async (req, res) => {
+// Redirect short URL
+app.get('/:shortCode', async (req, res) => {
     try {
-        const { shortlink } = req.params;
-        const source = req.query.source || 'click';
+        const { shortCode } = req.params;
 
-        const qrCode = await QRCodeModel.findOne({ shortlink });
+        const result = await pool.query(
+            'SELECT * FROM qrcodes WHERE short_code = $1 AND is_active = true',
+            [shortCode]
+        );
 
-        if (!qrCode) {
-            return res.status(404).send(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>404 - Not Found</title>
-                    <style>
-                        body {
-                            font-family: Arial, sans-serif;
-                            text-align: center;
-                            padding: 50px;
-                            background: #f5f7fa;
-                        }
-                        h1 { color: #e74c3c; }
-                        a {
-                            display: inline-block;
-                            margin-top: 20px;
-                            padding: 10px 20px;
-                            background: #3498db;
-                            color: white;
-                            text-decoration: none;
-                            border-radius: 5px;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <h1>404 - Không tìm thấy</h1>
-                    <p>Short URL này không tồn tại hoặc đã bị xóa.</p>
-                    <a href="/">← Quay lại trang chủ</a>
-                </body>
-                </html>
-            `);
+        if (result.rows.length === 0) {
+            return res.status(404).send('QR Code not found or inactive');
         }
 
-        // Update counter
-        if (source === 'qr') {
-            qrCode.scanCount += 1;
-        } else {
-            qrCode.clickCount += 1;
-        }
-        await qrCode.save();
+        const qrcode = result.rows[0];
 
-        // Redirect to original URL
-        res.redirect(301, qrCode.url);
+        // Update click count
+        await pool.query(
+            'UPDATE qrcodes SET click_count = click_count + 1 WHERE id = $1',
+            [qrcode.id]
+        );
 
+        // Redirect
+        res.redirect(qrcode.original_url);
     } catch (error) {
-        console.error('Redirect error:', error);
-        res.status(500).send('Error: ' + error.message);
+        console.error('Error redirecting:', error);
+        res.status(500).send('Server error');
     }
 });
 
 // Health check
-app.get('/api/health', (req, res) => {
-    res.json({ 
-        success: true, 
-        message: 'QR Code Manager is running!',
-        mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
-    });
+app.get('/api/health', async (req, res) => {
+    try {
+        await pool.query('SELECT 1');
+        res.json({ 
+            success: true, 
+            message: 'QR Code Manager is running!',
+            database: 'connected',
+            port: PORT
+        });
+    } catch (error) {
+        res.json({ 
+            success: true, 
+            message: 'QR Code Manager is running!',
+            database: 'disconnected',
+            port: PORT
+        });
+    }
 });
 
-// Start server (only for local development)
+// Start server
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
         console.log(`🚀 Server running on port ${PORT}`);
@@ -316,5 +357,5 @@ if (process.env.NODE_ENV !== 'production') {
     });
 }
 
-// Export for Vercel
 module.exports = app;
+
