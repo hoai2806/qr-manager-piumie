@@ -17,14 +17,16 @@ app.use(express.static('public'));
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/qrmanager';
-mongoose.connect(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => {
-    console.log('✅ Connected to MongoDB');
-}).catch(err => {
-    console.error('❌ MongoDB connection error:', err);
-});
+
+// Connect to MongoDB (non-blocking)
+mongoose.connect(MONGODB_URI)
+    .then(() => {
+        console.log('✅ Connected to MongoDB');
+    })
+    .catch(err => {
+        console.error('❌ MongoDB connection error:', err);
+        // Don't exit - let serverless function handle it
+    });
 
 // QR Code Schema
 const qrCodeSchema = new mongoose.Schema({
@@ -235,10 +237,13 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📱 Visit: http://localhost:${PORT}`);
-});
+// Start server (only for local development)
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+        console.log(`📱 Visit: http://localhost:${PORT}`);
+    });
+}
 
+// Export for Vercel
 module.exports = app;
