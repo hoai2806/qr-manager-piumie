@@ -27,15 +27,28 @@ app.use(express.static('public'));
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/qrmanager';
 
-// Connect to MongoDB (non-blocking)
-mongoose.connect(MONGODB_URI)
-    .then(() => {
-        console.log('✅ Connected to MongoDB');
-    })
-    .catch(err => {
-        console.error('❌ MongoDB connection error:', err);
-        // Don't exit - let serverless function handle it
-    });
+// Connect to MongoDB with better error handling
+mongoose.connect(MONGODB_URI, {
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+})
+.then(() => {
+    console.log('✅ Connected to MongoDB');
+})
+.catch(err => {
+    console.error('❌ MongoDB connection error:', err.message);
+});
+
+// Middleware to check MongoDB connection
+const checkDBConnection = (req, res, next) => {
+    if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({
+            success: false,
+            message: 'Database connection not ready. Please check MONGODB_URI environment variable.'
+        });
+    }
+    next();
+};
 
 // QR Code Schema
 const qrCodeSchema = new mongoose.Schema({
@@ -105,17 +118,18 @@ app.get('/api/auth/status', (req, res) => {
 });
 
 // API: Get all QR codes (protected)
-app.get('/api/qrcodes', requireAuth, async (req, res) => {
+app.get('/api/qrcodes', requireAuth, checkDBConnection, async (req, res) => {
     try {
         const qrcodes = await QRCodeModel.find().sort({ createdAt: -1 });
         res.json({ success: true, data: qrcodes });
     } catch (error) {
+        console.error('Error fetching QR codes:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
 // API: Create QR code (protected)
-app.post('/api/qrcodes', requireAuth, async (req, res) => {
+app.post('/api/qrcodes', requireAuth, checkDBConnection, async (req, res) => {
     try {
         const { title, url } = req.body;
 
@@ -175,7 +189,7 @@ app.post('/api/qrcodes', requireAuth, async (req, res) => {
 });
 
 // API: Delete QR code (protected)
-app.delete('/api/qrcodes/:id', requireAuth, async (req, res) => {
+app.delete('/api/qrcodes/:id', requireAuth, checkDBConnection, async (req, res) => {
     try {
         const { id } = req.params;
         const deleted = await QRCodeModel.findByIdAndDelete(id);
@@ -201,7 +215,7 @@ app.delete('/api/qrcodes/:id', requireAuth, async (req, res) => {
 });
 
 // API: Get statistics (protected)
-app.get('/api/stats', requireAuth, async (req, res) => {
+app.get('/api/stats', requireAuth, checkDBConnection, async (req, res) => {
     try {
         const totalQR = await QRCodeModel.countDocuments();
         const qrcodes = await QRCodeModel.find();
@@ -218,9 +232,10 @@ app.get('/api/stats', requireAuth, async (req, res) => {
             }
         });
     } catch (error) {
-        res.status(500).json({ 
-            success: false, 
-            message: error.message 
+        console.error('Error fetching stats:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
         });
     }
 });
