@@ -4,7 +4,7 @@ const QRCode = require('qrcode');
 const { nanoid } = require('nanoid');
 const cors = require('cors');
 const path = require('path');
-const session = require('express-session');
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const app = express();
@@ -12,20 +12,16 @@ const PORT = process.env.PORT || 3000;
 
 // Admin passcode (from environment variables)
 const ADMIN_PASSCODE = process.env.ADMIN_PASSCODE || 'Piumie2024';
+const AUTH_TOKEN = 'qr_manager_authenticated';
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: true,
+    credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'qr-manager-secret-key-2024',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
-}));
+app.use(cookieParser());
 app.use(express.static('public'));
 
 // MongoDB Connection
@@ -56,7 +52,8 @@ const QRCodeModel = mongoose.model('QRCode', qrCodeSchema);
 
 // Authentication Middleware
 const requireAuth = (req, res, next) => {
-    if (req.session && req.session.isAuthenticated) {
+    const authCookie = req.cookies.auth_token;
+    if (authCookie === AUTH_TOKEN) {
         return next();
     }
     res.status(401).json({ success: false, message: 'Authentication required' });
@@ -66,7 +63,8 @@ const requireAuth = (req, res, next) => {
 
 // Login page
 app.get('/', (req, res) => {
-    if (req.session && req.session.isAuthenticated) {
+    const authCookie = req.cookies.auth_token;
+    if (authCookie === AUTH_TOKEN) {
         res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
     } else {
         res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -78,8 +76,12 @@ app.post('/api/login', (req, res) => {
     const { passcode } = req.body;
 
     if (passcode === ADMIN_PASSCODE) {
-        req.session.isAuthenticated = true;
-        req.session.username = 'Admin';
+        // Set cookie for authentication
+        res.cookie('auth_token', AUTH_TOKEN, {
+            httpOnly: true,
+            maxAge: 24 * 60 * 60 * 1000, // 24 hours
+            sameSite: 'lax'
+        });
         res.json({ success: true, message: 'Login successful' });
     } else {
         res.status(401).json({ success: false, message: 'Mã passcode không đúng' });
@@ -88,15 +90,17 @@ app.post('/api/login', (req, res) => {
 
 // Logout API
 app.post('/api/logout', (req, res) => {
-    req.session.destroy();
+    res.clearCookie('auth_token');
     res.json({ success: true, message: 'Logged out successfully' });
 });
 
 // Check auth status
 app.get('/api/auth/status', (req, res) => {
+    const authCookie = req.cookies.auth_token;
+    const isAuthenticated = authCookie === AUTH_TOKEN;
     res.json({
-        isAuthenticated: req.session && req.session.isAuthenticated,
-        username: req.session?.username
+        isAuthenticated: isAuthenticated,
+        username: isAuthenticated ? 'Admin' : null
     });
 });
 
