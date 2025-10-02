@@ -1,0 +1,15 @@
+RewriteEngine On
+
+# Redirect short codes
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} ^/([a-zA-Z0-9]{8})$
+RewriteRule ^([a-zA-Z0-9]{8})$ redirect.php?code=$1 [L,QSA]
+
+# API routes
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^api\.php/(.*)$ api.php [L,QSA,E=PATH_INFO:/$1]
+
+# Default to index.php
+DirectoryIndex index.php
+
